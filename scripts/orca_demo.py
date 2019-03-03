@@ -19,16 +19,17 @@ class ClearPath():
         self.ax_vxvy = self.fig.add_subplot(122)
         self.area = [-3, 3]
         self.robot1 = SimpleBot(id = 0, odom = np.array((-2,0, 0.0, 0.0)))
-        self.robot2 = SimpleBot(id = 1, odom = np.array((1.7,-1.2, 0.0, 0.0)), color="blue")
-        self.robot3 = SimpleBot(id = 2, odom = np.array((1.1,1.2, 0.0, 0.0)), color="green")
-        self.robot4 = SimpleBot(id = 3, odom = np.array((1.3,0, 0.0, 0.0)), color="yellow")
+        self.robot2 = SimpleBot(id = 1, odom = np.array((2.0,0.0, 0.0, 0.0)), color="blue")
+        self.robot3 = SimpleBot(id = 2, odom = np.array((0.0,-2.0, 0.0, 0.0)), color="green")
+        self.robot4 = SimpleBot(id = 3, odom = np.array((0.0,2.0, 0.0, 0.0)), color="yellow")
         #self.robot4 = SimpleBot(id = 3, odom = np.array((1.0,3.0, 0.0, 0.0)), color="yellow")
         self.robots = [self.robot1, self.robot2, self.robot3, self.robot4] # index must be the same as robot*.id
-        self.goals = np.array(((2,0), (-2, -1.2), (-2, 1.2), (-2, 0)))
+        self.goals = np.array(((2,0), (-2, 0), (0, 2), (0, -2)))
         self.norm = 10.0
-        self.tau = 3.0
+        self.tau = 2.8
         self.reciprocal_param = 1.0
         self.vel_pref_list = np.empty((len(self.robots),2))
+        self.vel_new_list = np.empty((len(self.robots),2))
         self.vel_resolution = 0.05
 
     def print_robot(self):
@@ -199,8 +200,7 @@ class ClearPath():
 
         return u_point-point1 #return u_vec refer to 'eq5'
 
-    def calc_orca(self, plot_orca=True):
-        robot = self.robots[0]
+    def calc_orca(self, robot, plot_orca=True):
 #        for robot in self.robots:
         orca = np.empty((len(self.robots)-1,3)) # (robot_num, (a,b,flag)) #a,b := y = ax+b, flag:= lower(1) or upper(0) or nothing(-1)
         idx = 0
@@ -235,38 +235,40 @@ class ClearPath():
 
         return orca
 
-    def calc_vel_new(self, ):
-        robot = self.robots[0]
-        orca = self.calc_orca()
-        #orca:(robot_num, (a,b,flag)) #a,b := y = ax+b, flag:= lower(1) or upper(0) or nothing(-1)
-        #robot_vel_new = self.vel_pref_list[robot.id]
-        robot_vel_new = np.zeros(2)
-        min_norm = 100.0
-        for vx in np.arange(-robot.max_vel, robot.max_vel+self.vel_resolution, self.vel_resolution):
-            for vy in np.arange(-robot.max_vel, robot.max_vel+self.vel_resolution, self.vel_resolution):
-                if vx**2 + vy**2 > robot.max_vel**2:
-                    continue
-                is_inside_orca = True
-                for orca_boundary in orca:
-                    if int(orca_boundary[2]) == -1:
-                        continue
-                    lower = int(orca_boundary[2])
-                    if lower:
-                        is_inside_orca = vy < orca_boundary[0] * vx + orca_boundary[1]
-                    else:
-                        is_inside_orca = vy > orca_boundary[0] * vx + orca_boundary[1]
-                    if not is_inside_orca:
-                        break
-                if not is_inside_orca:
-                    continue
+    def calc_vel_new(self,):
 
-                norm = np.linalg.norm(self.vel_pref_list[robot.id] - np.array((vx, vy)))
-                if norm < min_norm:
-                    min_norm = norm
-                    robot_vel_new = np.array((vx,vy))
-                #self.ax_vxvy.plot(vx, vy, "r.")
-        self.ax_vxvy.plot(robot_vel_new[0], robot_vel_new[1], "bo")
-        return robot_vel_new
+        for idx, robot in enumerate(self.robots):
+            orca = self.calc_orca(robot)
+            #orca:(robot_num, (a,b,flag)) #a,b := y = ax+b, flag:= lower(1) or upper(0) or nothing(-1)
+            #robot_vel_new = self.vel_pref_list[robot.id]
+            robot_vel_new = np.zeros(2)
+            min_norm = 100.0
+            for vx in np.arange(-robot.max_vel, robot.max_vel+self.vel_resolution, self.vel_resolution):
+                for vy in np.arange(-robot.max_vel, robot.max_vel+self.vel_resolution, self.vel_resolution):
+                    if vx**2 + vy**2 > robot.max_vel**2:
+                        continue
+                    is_inside_orca = True
+                    for orca_boundary in orca:
+                        if int(orca_boundary[2]) == -1:
+                            continue
+                        lower = int(orca_boundary[2])
+                        if lower:
+                            is_inside_orca = vy < orca_boundary[0] * vx + orca_boundary[1]
+                        else:
+                            is_inside_orca = vy > orca_boundary[0] * vx + orca_boundary[1]
+                        if not is_inside_orca:
+                            break
+                    if not is_inside_orca:
+                        continue
+
+                    norm = np.linalg.norm(self.vel_pref_list[robot.id] - np.array((vx, vy)))
+                    if norm < min_norm:
+                        min_norm = norm
+                        robot_vel_new = np.array((vx,vy))
+                    #self.ax_vxvy.plot(vx, vy, "r.")
+            self.ax_vxvy.plot(robot_vel_new[0], robot_vel_new[1], "bo")
+            self.vel_new_list[idx] = robot_vel_new
+        #return robot_vel_new
 
 
 
@@ -281,11 +283,11 @@ class ClearPath():
         self.ax_vxvy.set_xlim(self.area[0], self.area[1])
         #im = ax_xy.plot(rand)
         self.calc_vel_pref()
-        robot_vel_new = self.calc_vel_new()
-        self.robot1.move(cmd = robot_vel_new, dt=0.1)
-        self.robot2.move(cmd = self.vel_pref_list[1], dt=0.1)
-        self.robot3.move(cmd = self.vel_pref_list[2], dt=0.1)
-        self.robot4.move(cmd = self.vel_pref_list[3], dt=0.1)
+        self.calc_vel_new()
+        self.robot1.move(cmd = self.vel_new_list[0], dt=0.1)
+        self.robot2.move(cmd = self.vel_new_list[1], dt=0.1)
+        self.robot3.move(cmd = self.vel_new_list[2], dt=0.1)
+        self.robot4.move(cmd = self.vel_new_list[3], dt=0.1)
         self.robot1.plot(self.ax_xy)
         self.robot2.plot(self.ax_xy)
         self.robot3.plot(self.ax_xy)
